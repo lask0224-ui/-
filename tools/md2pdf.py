@@ -1,6 +1,6 @@
-"""학습 가이드 Markdown 한 권을 책 모양의 PDF(A5)로 만든다.
+"""학습 가이드 Markdown 한 권을 책 모양의 PDF(기본 A4, --size A5 가능)로 만든다.
 
-usage: python3 tools/md2pdf.py <book.md> <out.pdf> --fonts <글꼴 폴더> [--section "구약 · 역사서"] [--chrome <path>]
+usage: python3 tools/md2pdf.py <book.md> <out.pdf> --fonts <글꼴 폴더> [--section "구약 · 역사서"] [--size A4|A5] [--chrome <path>]
 
 필요한 것
 - pip: markdown-it-py, playwright, pymupdf
@@ -39,26 +39,26 @@ TAG_RE = re.compile(TAG)
 MARK_RE = re.compile(r"〔([^〕]{1,60})〕")
 REF_RE = re.compile(r"\d+:\d+[ab]?(?:[–\-~]\d+(?::\d+)?[ab]?)?")
 
-CSS = r"""
-@page { size: A5; margin: 17mm 16mm 19mm 16mm; }
+CSS_TEMPLATE = r"""
+@page { size: @@size@@; margin: @@mt@@ @@ms@@ @@mb@@ @@ms@@; }
 :root { --ink:#222019; --muted:#77736a; --rule:#d8d1c2; --accent:#6b3f1d; --tint:#f6f2ea;
         --ed:#2c5d82; --gen:#3b6b3f; --blank:#8a5a00; --wait:#9b2f2a; }
-html { font-size: 9.4pt; }
+html { font-size: @@base@@; }
 body { font-family:'Noto Serif KR',serif; color:var(--ink); line-height:1.78; margin:0; background:#fff;
        word-break:normal; line-break:strict; overflow-wrap:break-word; text-align:justify;
        orphans:2; widows:2; }
 h2, h3, h4, th, .mk, .lead { font-family:'Noto Sans KR',sans-serif; }
 
 /* 표지 */
-.cover { height: 172mm; display:flex; flex-direction:column; break-after:page; text-align:center; }
-.cover .series { margin-top: 20mm; font-family:'Noto Sans KR',sans-serif; font-size:7.5pt; letter-spacing:.35em; color:var(--muted); }
+.cover { height: @@cover_h@@; display:flex; flex-direction:column; break-after:page; text-align:center; }
+.cover .series { margin-top: @@cover_top@@; font-family:'Noto Sans KR',sans-serif; font-size:7.5pt; letter-spacing:.35em; color:var(--muted); }
 .cover .orn { margin: 6mm auto; width: 26mm; border-top: 1px solid var(--accent); position: relative; }
 .cover .orn::after { content:"✦"; position:absolute; left:50%; top:-2.6mm; transform:translateX(-50%);
                      background:#fff; padding:0 1.5mm; color:var(--accent); font-size:7pt; }
-.cover h1 { font-size: 27pt; font-weight:700; letter-spacing:.06em; margin:0; line-height:1.3; }
+.cover h1 { font-size: @@h1@@; font-weight:700; letter-spacing:.06em; margin:0; line-height:1.3; }
 .cover .en { font-size: 11pt; color:var(--muted); font-style:italic; margin-top:1.5mm; letter-spacing:.08em; }
-.cover .motto { margin: 7mm 6mm 0; font-size: 10.5pt; line-height:1.8; color:var(--accent); text-align:center; }
-.cover .toc { margin: auto 6mm 0; text-align:left; font-size:8.6pt; line-height:2.05; }
+.cover .motto { margin: 8mm @@toc_side@@ 0; font-size: 10.5pt; line-height:1.8; color:var(--accent); text-align:center; }
+.cover .toc { margin: auto @@toc_side@@ 0; text-align:left; font-size:8.6pt; line-height:2.05; }
 .cover .toc .tt { font-family:'Noto Sans KR',sans-serif; font-size:7.5pt; letter-spacing:.3em; color:var(--muted);
                   border-bottom:1px solid var(--rule); padding-bottom:1mm; margin-bottom:1.5mm; }
 .cover .toc .row { display:flex; align-items:baseline; }
@@ -96,6 +96,7 @@ td:first-child { white-space:normal; min-width:14mm; }
 tr:last-child td { border-bottom:none; }
 tr { break-inside:avoid; }
 thead { display:table-header-group; }
+table.keep { break-inside:avoid; }  /* 짧은 표는 쪽 사이에서 나누지 않음 */
 
 /* 꼬리표: 작은 색 글씨 */
 .mk { font-size:6.8pt; white-space:nowrap; letter-spacing:-.01em; }
@@ -104,6 +105,22 @@ thead { display:table-header-group; }
 .m-other { color:var(--muted); }
 .ref { white-space:nowrap; }
 """
+
+# 판형별 값. CSS의 pt 값은 모두 scale만큼 키운다(@@…@@ 자리는 그대로).
+PRESETS = {
+    "A4": dict(size="A4", mt="22mm", mb="24mm", ms="24mm", base="10.6pt", cover_h="250mm",
+               cover_top="40mm", h1="34pt", toc_side="20mm", scale=1.13),
+    "A5": dict(size="A5", mt="17mm", mb="19mm", ms="16mm", base="9.4pt", cover_h="172mm",
+               cover_top="20mm", h1="27pt", toc_side="6mm", scale=1.0),
+}
+
+
+def css_for(size):
+    v = PRESETS[size]
+    # 모든 pt 값을 판형 비율만큼 키운 뒤, 판형별로 정한 값(@@…@@)을 넣는다
+    css = re.sub(r"(\d+(?:\.\d+)?)pt", lambda m: f"{float(m.group(1)) * v['scale']:.2f}pt", CSS_TEMPLATE)
+    return re.sub(r"@@(\w+)@@", lambda m: str(v[m.group(1)]), css)
+
 
 
 def font_css(font_dir):
@@ -213,11 +230,14 @@ def render_inline(md, s):
     return md.renderInline(bold_fix(s))
 
 
-def build_html(md_text, section, font_dir, toc_pages=None):
+def build_html(md_text, section, font_dir, toc_pages=None, size="A4"):
     title, en, motto, body_md = prepare(md_text)
     md = MarkdownIt("commonmark", {"html": True}).enable("table")
     body = md.render(bold_fix(body_md))
     body = drop_source_columns(body)
+    body = re.sub(r"<table>(.*?)</table>",
+                  lambda m: ('<table class="keep">' if m.group(1).count("<tr>") <= 11 else "<table>") + m.group(1) + "</table>",
+                  body, flags=re.S)
     body = decorate(body)
     body = re.sub(r"<p>(<strong>[^<]{1,40}</strong>)</p>", r'<p class="lead">\1</p>', body)
     body = re.sub(r"<h2>(\d+)\.\s*", r'<h2><span class="no">\1</span>', body)
@@ -238,19 +258,20 @@ def build_html(md_text, section, font_dir, toc_pages=None):
         + '<div class="toc"><div class="tt">차례</div>' + "".join(toc_rows) + "</div></section>"
     )
     head = (f'<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>{html.escape(title)}</title>'
-            f"<style>{font_css(font_dir)}\n{CSS}</style></head><body>")
+            f"<style>{font_css(font_dir)}\n{css_for(size)}</style></head><body>")
     return head + cover + "</body></html>", head + body + "</body></html>", title, [h[1] for h in heads]
 
 
-def to_pdf(browser, html_doc, path, footer):
+def to_pdf(browser, html_doc, path, footer, size="A4"):
     tmp = os.path.splitext(path)[0] + ".tmp.html"
     open(tmp, "w", encoding="utf-8").write(html_doc)
     page = browser.new_page()
     page.goto("file://" + os.path.abspath(tmp))
     page.evaluate("document.fonts.ready")
     page.wait_for_timeout(500)
-    opts = dict(path=path, format="A5", print_background=True,
-                margin={"top": "17mm", "bottom": "19mm", "left": "16mm", "right": "16mm"})
+    v = PRESETS[size]
+    opts = dict(path=path, format=size, print_background=True,
+                margin={"top": v["mt"], "bottom": v["mb"], "left": v["ms"], "right": v["ms"]})
     if footer:
         opts.update(display_header_footer=True, header_template="<span></span>", footer_template=footer)
     page.pdf(**opts)
@@ -265,26 +286,27 @@ def main():
     ap.add_argument("--fonts", required=True)
     ap.add_argument("--section", default="구약")
     ap.add_argument("--chrome", default=None)
+    ap.add_argument("--size", choices=sorted(PRESETS), default="A4")
     a = ap.parse_args()
     src = open(a.md, encoding="utf-8").read()
 
     from playwright.sync_api import sync_playwright
 
-    footer = ('<div style="width:100%;text-align:center;font-size:7pt;color:#77736a;'
+    footer = ('<div style="width:100%;text-align:center;font-size:7.5pt;color:#77736a;'
               'font-family:\'DejaVu Serif\',serif;">— <span class="pageNumber"></span> —</div>')
     base = os.path.splitext(a.pdf)[0]
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=a.chrome) if a.chrome else p.chromium.launch()
-        cover_html, body_html, title, heads = build_html(src, a.section, a.fonts)
-        to_pdf(browser, body_html, base + ".body.pdf", footer)
+        cover_html, body_html, title, heads = build_html(src, a.section, a.fonts, size=a.size)
+        to_pdf(browser, body_html, base + ".body.pdf", footer, a.size)
         # 차례의 쪽 번호: 본문 PDF에서 각 절 제목이 처음 나오는 쪽
         body = pymupdf.open(base + ".body.pdf")
         pages = []
         for name in heads:
             key = re.sub(r"\s+", " ", name).strip()[:12]
             pages.append(next((i + 1 for i, pg in enumerate(body) if pg.search_for(key)), ""))
-        cover_html, _, _, _ = build_html(src, a.section, a.fonts, pages)
-        to_pdf(browser, cover_html, base + ".cover.pdf", None)
+        cover_html, _, _, _ = build_html(src, a.section, a.fonts, pages, a.size)
+        to_pdf(browser, cover_html, base + ".cover.pdf", None, a.size)
         browser.close()
     out = pymupdf.open(base + ".cover.pdf")
     out.insert_pdf(body)
