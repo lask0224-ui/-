@@ -47,3 +47,15 @@
 | 구약 모세오경 (`구약/1_모세오경/` 개관 + 5권) | ✅ 완료 — 오기 46건 재검토 반영(고침 37 · 표기 조정 2 · 원문 유지 7), 빈칸 일반 해석 반영 |
 | 구약 역사서 (`구약/2_역사서/` 개관 + 12권) | ✅ 완료 |
 | 구약 시가서 | ✅ 완료 — 욥기·시편·잠언·전도서·아가 (시가서 개관은 아직) |
+| PDF 시범본: `pdf/08_룻기.pdf` | ✅ 완료 (2026-10-08) — 인쇄용 A4, 다른 책은 사용자 확인 후 |
+
+## PDF 만들기
+
+`tools/md2pdf.py`가 이 폴더의 Markdown 한 권을 인쇄용 PDF(A4)로 만든다. 내용은 바꾸지 않고 표시만 다르게 한다(출처 태그는 작은 회색 글씨, 〔정리자 해석〕·〔일반 해석〕·〔강의안 빈칸〕은 색 꼬리표).
+
+```bash
+pip install markdown-it-py playwright
+npm pack @fontsource/noto-serif-kr @fontsource/noto-sans-kr   # 글꼴 (각 tgz를 같은 폴더에 풀기)
+python3 tools/md2pdf.py study-guide/구약/2_역사서/08_룻기.md study-guide/pdf/08_룻기.pdf \
+  --fonts <글꼴 폴더> --section "구약 · 역사서"
+```
