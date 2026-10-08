@@ -10,10 +10,11 @@ usage: python3 tools/md2pdf.py <book.md> <out.pdf> --fonts <글꼴 폴더> [--se
 
 책으로 만들 때 원고에서 빼는 것 (사용자 결정 2026-10-08)
 - 제목의 “ — N장”
-- 머리 인용의 ‘구분’ 줄, ‘원자료 노트’ 줄
-- ‘교정 기록’ 절, ‘출처’ 절과 본문의 출처 태그 [룻] 등, 표의 ‘출처’ 열
-  - 태그가 문장의 주어로 쓰인 곳([아]는)은 출처 표의 파일 이름으로 바꾼다(“아가서 강의는”)
-  - 항목 앞의 이름표([룻]·[삼]: …)는 지운다
+- 머리 인용 가운데 표제(→ 표지)와 소개 줄(히브리 이름 등 → 본문 앞 상자)을 뺀 나머지: 구분, 사용자 지시, 원자료 노트 등
+- ‘출처’·‘교정 기록’·‘확인 대기’·‘책별 파일’ 절, 표의 ‘출처’ 열
+- 출처 태그 [룻] 등: 어느 강의의 견해인지를 나타내는 자리(항목·칸 맨 앞, 표 머리, 조사가 붙은 곳)는
+  강의 이름(LABELS)으로 바꾸고, 문장 끝의 출처 표시는 지운다
+- 저장소 파일 이름(`18_욥기.md`)은 책 이름(욥기)으로, README를 가리키는 줄은 뺀다
 그 밖의 본문은 바꾸지 않는다.
 """
 import argparse
@@ -34,10 +35,8 @@ MARKER_CLASSES = [
     ("확인 대기", "m-wait"),
 ]
 
-TAG = r"\[(?:[가-힣A-Za-z0-9·\-]{1,8})(?: [가-힣]{1,6}){0,3}\]"
-TAG_RE = re.compile(TAG)
 MARK_RE = re.compile(r"〔([^〕]{1,60})〕")
-REF_RE = re.compile(r"\d+:\d+[ab]?(?:[–\-~]\d+(?::\d+)?[ab]?)?")
+REF_RE = re.compile(r"\d+:\d+[ab]?(?:[–\-~](?:[가-힣]{1,2} ?)?\d+(?::\d+)?[ab]?)?")
 
 CSS_TEMPLATE = r"""
 @page { size: @@size@@; margin: @@mt@@ @@ms@@ @@mb@@ @@ms@@; }
@@ -57,6 +56,7 @@ h2, h3, h4, th, .mk, .lead { font-family:'Noto Sans KR',sans-serif; }
                      background:#fff; padding:0 1.5mm; color:var(--accent); font-size:7pt; }
 .cover h1 { font-size: @@h1@@; font-weight:700; letter-spacing:.06em; margin:0; line-height:1.3; }
 .cover .en { font-size: 11pt; color:var(--muted); font-style:italic; margin-top:1.5mm; letter-spacing:.08em; }
+.cover .en.ko { font-style:normal; letter-spacing:.02em; }
 .cover .motto { margin: 8mm @@toc_side@@ 0; font-size: 10.5pt; line-height:1.8; color:var(--accent); text-align:center; }
 .cover .toc { margin: auto @@toc_side@@ 0; text-align:left; font-size:8.6pt; line-height:2.05; }
 .cover .toc .tt { font-family:'Noto Sans KR',sans-serif; font-size:7.5pt; letter-spacing:.3em; color:var(--muted);
@@ -104,6 +104,11 @@ table.keep { break-inside:avoid; }  /* 짧은 표는 쪽 사이에서 나누지 
 .m-ed { color:var(--ed); } .m-gen { color:var(--gen); } .m-blank { color:var(--blank); } .m-wait { color:var(--wait); }
 .m-other { color:var(--muted); }
 .ref { white-space:nowrap; }
+/* 도식(``` 블록)은 본문 글씨로 가운데에 */
+pre { display:table; margin:3mm auto; break-inside:avoid; font-family:'Noto Serif KR',serif; font-size:9.5pt; line-height:1.7; color:var(--ink); }
+pre code { font-family:inherit; font-size:inherit; color:inherit; }
+.intro { background:var(--tint); border-left:2px solid var(--accent); padding:2.5mm 4mm; margin:0 0 6mm; text-align:left; }
+.intro p { margin:.8mm 0; }
 """
 
 # 판형별 값. CSS의 pt 값은 모두 scale만큼 키운다(@@…@@ 자리는 그대로).
@@ -136,32 +141,84 @@ def font_css(font_dir):
     return "\n".join(parts)
 
 
-def source_names(md_text):
-    """‘출처’ 표에서 약칭 → 읽을 수 있는 이름(“아가서 강의”)."""
-    names = {}
-    for m in re.finditer(r"^\| (\[[^\]]+\]) \| (.+?) \|", md_text, re.M):
-        cell = m.group(2)
-        f = re.search(r"`([^`]+)`", cell)
-        if not f:
-            continue
-        stem = os.path.splitext(os.path.basename(f.group(1)))[0]
-        stem = re.sub(r"^\d+\.", "", stem).split("&")[0].strip()
-        names[m.group(1)] = f"{stem} 강의"
-    return names
+# 출처 약칭 → 책에 쓸 강의 이름. 태그가 ‘어느 강의의 견해인지’를 나타내는 자리(항목·칸 맨 앞,
+# 표 머리, 조사가 붙은 곳)에서만 이 이름으로 바꾸고, 문장 끝의 출처 표시는 지운다.
+LABELS = {
+    "창A": "2024 창세기 강의", "창B": "2025 창세기 강의",
+    "출A": "출애굽기 강의(남영남)", "출B": "2025 출애굽기 강의",
+    "레A": "2023 레위기 강의", "레B": "레위기 강의(더바미)", "레위": "레위 지파 도표",
+    "민": "민수기 강의", "신": "신명기 표",
+    "수A": "여호수아 슬라이드", "수B": "여호수아 유인물",
+    "삿A": "2023 사사기 강의", "삿B": "2025 사사기 강의", "병행": "사사기·사무엘 병행 도표",
+    "룻": "룻기 강의", "삼": "사무엘 강의",
+    "왕A": "열왕기 BRI 강의", "왕B": "열왕기 ‘다윗과 솔로몬’ 강의", "왕학1": "열왕기 유인물 1", "왕학2": "열왕기 유인물 2",
+    "대": "역대기 강의", "스느": "에스라·느헤미야 강의", "에": "에스더 강의",
+    "욥": "욥기 강의", "시": "시편 유인물", "시25": "2025 시편 강의", "시1-3": "시편 1~3권 연구",
+    "잠": "잠언 강의", "전": "전도서 강의", "아": "아가 강의", "아·손글씨": "아가 강의 손글씨 메모",
+    "단": "다니엘 강의", "애": "예레미야애가 강의", "렘B": "예레미야 강의", "말": "말라기 강의",
+    "마": "마태복음 강의", "막": "마가복음 강의", "TBS4": "사도행전 강의", "소개관": "소예언서 개관",
+}
+DROP_SECTIONS = r"(?:출처|교정 기록|확인 대기|책별 파일)"
+# 출처 태그 = 알려진 약칭으로 시작하는 대괄호: [룻] [룻 구조] [창B p20] [창B p58, 창A p62] [출B 각 재앙 표 + 출A]
+KEYS = "|".join(re.escape(k) for k in sorted(LABELS, key=len, reverse=True))
+TAG = rf"\[(?:{KEYS})(?:[ ,·+][^\]\n]{{0,40}})?\]"
+TAG_RE = re.compile(TAG)
+KEY_RE = re.compile(rf"(?<![가-힣A-Za-z0-9])(?:{KEYS})(?![A-Za-z0-9가-힣])")
+
+
+def labels(tags):
+    """[창B p58, 창A p62] → ‘2025 창세기 강의·2024 창세기 강의’ (쪽 번호 등 뒤의 말은 버림)."""
+    keys = []
+    for t in TAG_RE.findall(tags):
+        inner = t[1:-1]
+        keys += [inner.split(" ")[0].split(",")[0]] + KEY_RE.findall(inner[len(inner.split(" ")[0]):])
+    return "·".join(dict.fromkeys(LABELS.get(k, k) for k in keys if k))
 
 
 def strip_sources(md_text):
-    names = source_names(md_text)
-    # ‘출처’·‘교정 기록’ 절 통째로 (다음 ## 또는 끝까지)
-    md_text = re.sub(r"\n## \d+\. (?:출처|교정 기록|확인 대기)[^\n]*\n.*?(?=\n## |\Z)", "\n", md_text, flags=re.S)
-    # 항목 앞 이름표: “- [룻]·[삼]: …”
-    md_text = re.sub(rf"(^\s*[-*]\s+|^\s*\d+\.\s+)(?:{TAG}[·, ]*)+:\s*", r"\1", md_text, flags=re.M)
-    # 주어로 쓰인 태그: “[아]는”
-    md_text = re.sub(rf"({TAG})(?=[가-힣])", lambda m: names.get(m.group(1), m.group(1)), md_text)
-    # 나머지 태그(앞 공백 포함). 괄호 안 맨 앞이면 뒤 공백도 지움.
-    md_text = re.sub(rf"\(({TAG}\s*)+", "(", md_text)
-    md_text = re.sub(rf"[ \t]*(?:{TAG})+", "", md_text)
+    md_text = re.sub(rf"\n## \d+\. {DROP_SECTIONS}[^\n]*\n.*?(?=\n## |\Z)", "\n", md_text, flags=re.S)
+    lines = md_text.split("\n")
+    out = []
+    for i, line in enumerate(lines):
+        is_head = line.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[-| :]+\|\s*$", lines[i + 1])
+        if is_head:
+            # 표 머리: 칸 맨 앞의 태그는 강의 이름, 칸 중간의 태그는 (강의 이름)
+            def head_cell(c):
+                c2 = re.sub(rf"^(\s*)((?:{TAG})+)", lambda m: m.group(1) + labels(m.group(2)), c)
+                c2 = re.sub(rf"\s*\(((?:{TAG}\s*)+)\)", lambda m: f" ({labels(m.group(1))})", c2)
+                c2 = re.sub(rf"\s*((?:{TAG})+)", lambda m: f" ({labels(m.group(1))})", c2)
+                # “2025 창세기 강의 2025”처럼 연도가 겹치면 뒤의 것을 지움
+                return re.sub(r"(\d{4})(.*?)\s+\1\s*$", r"\1\2 ", c2)
+            out.append("|".join(head_cell(c) for c in line.split("|")))
+            continue
+        # 항목·칸 맨 앞, “/ ” 뒤의 태그 → “강의 이름:”
+        line = re.sub(rf"(^\s*(?:[-*]|\d+\.)\s+|\|\s*|/\s+)((?:{TAG}[·, ]*)+)(?![가-힣])(:?)\s*(?=\S)",
+                      lambda m: f"{m.group(1)}{labels(m.group(2))}: ", line)
+        # 조사가 붙은 태그 → 강의 이름
+        line = re.sub(rf"((?:{TAG})+)(?=[가-힣])", lambda m: labels(m.group(1)), line)
+        # 나머지 태그는 지움
+        line = re.sub(rf"\(((?:{TAG}\s*)+)", "(", line)
+        line = re.sub(rf"[ \t]*(?:{TAG})+", "", line)
+        line = re.sub(r"\s?\(\)", "", line)  # 태그를 지우고 남은 빈 괄호만 (원고의 빈칸 “( )”는 그대로)
+        out.append(line)
+    md_text = "\n".join(out)
+    # 저장소 안의 파일 이름 → 책 이름, README를 가리키는 줄은 뺌
+    md_text = re.sub(r"^.*README\.md.*\n?", "", md_text, flags=re.M)
+    md_text = re.sub(r"`(?:[^`]*/)?(\d+)_([^`/]+?)\.md`", lambda m: book_name(m.group(1), m.group(2)), md_text)
+    md_text = re.sub(r"\s?\(\)", "", md_text)
+    # 책에서 뺀 절(교정 기록·확인 대기)을 가리키는 꼬리만 지운다. 앞의 내용(“강의안은 …으로 적었다”)은 남김
+    md_text = re.sub(r"\s*—\s*교정 기록(?:\s*[①-⑳]+|\s*참고)", "", md_text)
+    md_text = re.sub(r"\s*\(\s*교정 기록\s*[①-⑳]+\s*\)", "", md_text)
+    md_text = re.sub(r"\s*\(‘\d+\. 확인 대기’[^()]*\)", "", md_text)
+    # 제목 줄의 작업 메모 “(… 이미지로 확인)” 같은 괄호는 뺌
+    md_text = re.sub(r"^(#+ .*?)\s*\([^()]*확인[^()]*\)", r"\1", md_text, flags=re.M)
     return md_text
+
+
+def book_name(num, stem):
+    if stem.endswith("_개관"):
+        return stem[:-3].replace("_", " ") + " 개관"
+    return stem.replace("_", "·")
 
 
 def drop_source_columns(body_html):
@@ -206,24 +263,41 @@ def bold_fix(md_text):
     return "\n".join(bold(l) for l in md_text.split("\n"))
 
 
+MOTTO_LABELS = ("이 책의 표제", "이 책의 두 표제", "두 표제", "표제 구절", "표제")
+INTRO_LABELS = ("히브리 이름", "이름", "네 동사로 읽는 책", "강의의 방식")
+
+
 def prepare(md_text):
-    """원고 → (제목, 영문 제목, 표제, 본문 Markdown)"""
-    md_text = re.sub(r"\n> 원자료 노트:[^\n]*\n?", "\n", md_text)
+    """원고 → (제목, 부제, 표제, 머리 소개 줄들, 본문 Markdown)"""
     m = re.match(r"# (.+?)\n", md_text)
     title_line = m.group(1) if m else "학습 가이드"
     md_text = md_text[m.end():] if m else md_text
-    title_line = re.sub(r"\s*—\s*\d+\s*장\s*$", "", title_line)
-    t = re.match(r"(.+?)\s*\((.+?)\)\s*$", title_line)
-    title, en = (t.group(1), t.group(2)) if t else (title_line, "")
-    motto = ""
-    mm = re.search(r"^> \*\*이 책의 표제\*\*:\s*(.+)$", md_text, re.M)
-    if mm:
-        motto = mm.group(1)
-    # 머리 인용(구분·표제) 줄과 그 뒤 첫 구분선 제거
-    md_text = re.sub(r"\A\s*(?:>[^\n]*\n)+\s*(?:---\s*\n)?", "", md_text)
+    # “ — 4장”, “ — 31장 + 24장”, “ — 150편”은 빼고, 개관의 “ — 여호수아 ~ 에스더 (12권)”는 부제로
+    title_line = re.sub(r"\s*—\s*[\d\s장편+]+$", "", title_line)
+    sub = ""
+    if " — " in title_line:
+        title_line, sub = title_line.split(" — ", 1)
+    t = re.match(r"(.+?)\s*\(([A-Za-z0-9 &–\-]+)\)\s*$", title_line)
+    title, en = (t.group(1), t.group(2)) if t else (title_line, sub)
+    # 머리 인용: 표제는 표지로, 소개 줄은 본문 앞 상자로, 나머지(구분·사용자 지시·원자료 노트 등)는 뺌
+    head = re.match(r"\A\s*((?:>[^\n]*\n|[ \t]*\n)+)\s*(?:---\s*\n)?", md_text)
+    motto, intro = "", []
+    if head:
+        md_text = md_text[head.end():]
+        for line in head.group(1).splitlines():
+            body = line[1:].strip()
+            lm = re.match(r"\*\*(.+?)\*\*\s*:\s*(.+)$", body)
+            if not lm:
+                continue
+            key, val = lm.group(1).strip(), lm.group(2)
+            if key in MOTTO_LABELS and not motto:
+                motto = val
+            elif key in INTRO_LABELS:
+                intro.append(f"**{key}**: {val}")
     md_text = strip_sources(md_text)
-    motto = re.sub(rf"\s*{TAG}", "", motto)
-    return title, en, motto, md_text
+    motto = strip_sources(motto).strip()
+    intro = [strip_sources(x).strip() for x in intro]
+    return title, en, motto, intro, md_text
 
 
 def render_inline(md, s):
@@ -231,9 +305,11 @@ def render_inline(md, s):
 
 
 def build_html(md_text, section, font_dir, toc_pages=None, size="A4"):
-    title, en, motto, body_md = prepare(md_text)
+    title, en, motto, intro, body_md = prepare(md_text)
     md = MarkdownIt("commonmark", {"html": True}).enable("table")
     body = md.render(bold_fix(body_md))
+    if intro:
+        body = '<div class="intro">' + "".join(f"<p>{render_inline(md, x)}</p>" for x in intro) + "</div>" + body
     body = drop_source_columns(body)
     body = re.sub(r"<table>(.*?)</table>",
                   lambda m: ('<table class="keep">' if m.group(1).count("<tr>") <= 11 else "<table>") + m.group(1) + "</table>",
@@ -241,7 +317,7 @@ def build_html(md_text, section, font_dir, toc_pages=None, size="A4"):
     body = decorate(body)
     body = re.sub(r"<p>(<strong>[^<]{1,40}</strong>)</p>", r'<p class="lead">\1</p>', body)
     body = re.sub(r"<h2>(\d+)\.\s*", r'<h2><span class="no">\1</span>', body)
-    heads = [re.sub(r"<[^>]+>", " ", h).split(None, 1) for h in re.findall(r"<h2>(.*?)</h2>", body, re.S)]
+    heads = [re.sub(r"<span class=\"mk[^>]*>.*?</span>|<[^>]+>", " ", h).split(None, 1) for h in re.findall(r"<h2>(.*?)</h2>", body, re.S)]
     toc_rows = []
     for i, (no, name) in enumerate(heads):
         name = re.sub(r"\s+", " ", name).strip()
@@ -253,7 +329,7 @@ def build_html(md_text, section, font_dir, toc_pages=None, size="A4"):
         f'<div class="series">성경 학습 가이드 · {html.escape(section)}</div>'
         '<div class="orn"></div>'
         f"<h1>{html.escape(title)}</h1>"
-        + (f'<div class="en">{html.escape(en)}</div>' if en else "")
+        + (f'<div class="en{" ko" if re.search("[가-힣]", en) else ""}">{html.escape(en)}</div>' if en else "")
         + (f'<div class="motto">{decorate(render_inline(md, motto))}</div>' if motto else "")
         + '<div class="toc"><div class="tt">차례</div>' + "".join(toc_rows) + "</div></section>"
     )
