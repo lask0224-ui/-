@@ -1,4 +1,4 @@
-"""학습 가이드 Markdown 한 권을 책 모양의 PDF(A4)로 만든다.
+"""학습 가이드 Markdown 한 권을 책 모양의 PDF(A5)로 만든다.
 
 usage: python3 tools/md2pdf.py <book.md> <out.pdf> --fonts <글꼴 폴더> [--section "구약 · 역사서"] [--chrome <path>]
 
@@ -11,7 +11,7 @@ usage: python3 tools/md2pdf.py <book.md> <out.pdf> --fonts <글꼴 폴더> [--se
 책으로 만들 때 원고에서 빼는 것 (사용자 결정 2026-10-08)
 - 제목의 “ — N장”
 - 머리 인용의 ‘구분’ 줄, ‘원자료 노트’ 줄
-- ‘출처’ 절과 본문의 출처 태그 [룻] 등, 표의 ‘출처’ 열
+- ‘교정 기록’ 절, ‘출처’ 절과 본문의 출처 태그 [룻] 등, 표의 ‘출처’ 열
   - 태그가 문장의 주어로 쓰인 곳([아]는)은 출처 표의 파일 이름으로 바꾼다(“아가서 강의는”)
   - 항목 앞의 이름표([룻]·[삼]: …)는 지운다
 그 밖의 본문은 바꾸지 않는다.
@@ -37,62 +37,72 @@ MARKER_CLASSES = [
 TAG = r"\[(?:[가-힣A-Za-z0-9·\-]{1,8})(?: [가-힣]{1,6}){0,3}\]"
 TAG_RE = re.compile(TAG)
 MARK_RE = re.compile(r"〔([^〕]{1,60})〕")
+REF_RE = re.compile(r"\d+:\d+[ab]?(?:[–\-~]\d+(?::\d+)?[ab]?)?")
 
 CSS = r"""
-@page { size: A4; margin: 24mm 22mm 24mm 22mm; }
-:root { --ink:#222019; --muted:#77736a; --rule:#cfc8b8; --accent:#6b3f1d; --tint:#f6f2ea;
+@page { size: A5; margin: 17mm 16mm 19mm 16mm; }
+:root { --ink:#222019; --muted:#77736a; --rule:#d8d1c2; --accent:#6b3f1d; --tint:#f6f2ea;
         --ed:#2c5d82; --gen:#3b6b3f; --blank:#8a5a00; --wait:#9b2f2a; }
-html { font-size: 10.5pt; }
-body { font-family:'Noto Serif KR',serif; color:var(--ink); line-height:1.8; margin:0; background:#fff;
-       word-break:normal; line-break:strict; overflow-wrap:break-word; text-align:justify; }
-h2, h3, h4, th, .mk { font-family:'Noto Sans KR',sans-serif; }
+html { font-size: 9.4pt; }
+body { font-family:'Noto Serif KR',serif; color:var(--ink); line-height:1.78; margin:0; background:#fff;
+       word-break:normal; line-break:strict; overflow-wrap:break-word; text-align:justify;
+       orphans:2; widows:2; }
+h2, h3, h4, th, .mk, .lead { font-family:'Noto Sans KR',sans-serif; }
 
 /* 표지 */
-.cover { height: 247mm; display:flex; flex-direction:column; break-after:page; text-align:center; }
-.cover .series { margin-top: 38mm; font-family:'Noto Sans KR',sans-serif; font-size:9pt; letter-spacing:.35em; color:var(--muted); }
-.cover .orn { margin: 9mm auto; width: 34mm; border-top: 1px solid var(--accent); position: relative; }
-.cover .orn::after { content:"✦"; position:absolute; left:50%; top:-3.2mm; transform:translateX(-50%);
-                     background:#fff; padding:0 2mm; color:var(--accent); font-size:8pt; }
-.cover h1 { font-size: 34pt; font-weight:700; letter-spacing:.06em; margin:0; line-height:1.3; }
-.cover .en { font-size: 13pt; color:var(--muted); font-style:italic; margin-top:2mm; letter-spacing:.08em; }
-.cover .motto { margin: 10mm 18mm 0; font-size: 12pt; line-height:1.9; color:var(--accent); text-align:center; }
-.cover .toc { margin: auto 22mm 6mm; text-align:left; font-size:9.5pt; line-height:2.1; }
-.cover .toc .tt { font-family:'Noto Sans KR',sans-serif; font-size:8.5pt; letter-spacing:.3em; color:var(--muted);
-                  border-bottom:1px solid var(--rule); padding-bottom:1mm; margin-bottom:2mm; }
+.cover { height: 172mm; display:flex; flex-direction:column; break-after:page; text-align:center; }
+.cover .series { margin-top: 20mm; font-family:'Noto Sans KR',sans-serif; font-size:7.5pt; letter-spacing:.35em; color:var(--muted); }
+.cover .orn { margin: 6mm auto; width: 26mm; border-top: 1px solid var(--accent); position: relative; }
+.cover .orn::after { content:"✦"; position:absolute; left:50%; top:-2.6mm; transform:translateX(-50%);
+                     background:#fff; padding:0 1.5mm; color:var(--accent); font-size:7pt; }
+.cover h1 { font-size: 27pt; font-weight:700; letter-spacing:.06em; margin:0; line-height:1.3; }
+.cover .en { font-size: 11pt; color:var(--muted); font-style:italic; margin-top:1.5mm; letter-spacing:.08em; }
+.cover .motto { margin: 7mm 6mm 0; font-size: 10.5pt; line-height:1.8; color:var(--accent); text-align:center; }
+.cover .toc { margin: auto 6mm 0; text-align:left; font-size:8.6pt; line-height:2.05; }
+.cover .toc .tt { font-family:'Noto Sans KR',sans-serif; font-size:7.5pt; letter-spacing:.3em; color:var(--muted);
+                  border-bottom:1px solid var(--rule); padding-bottom:1mm; margin-bottom:1.5mm; }
 .cover .toc .row { display:flex; align-items:baseline; }
 .cover .toc .row .dots { flex:1; border-bottom:1px dotted var(--rule); margin:0 2mm; transform:translateY(-1mm); }
 
-/* 본문 */
-h2 { font-size:15pt; font-weight:700; color:var(--accent); margin:12mm 0 5mm; padding-bottom:2.5mm;
-     border-bottom:1.5px solid var(--accent); break-after:avoid; text-align:left; }
-h2 .no { display:inline-block; min-width:9mm; font-family:'Noto Serif KR',serif; }
-h3 { font-size:11.5pt; font-weight:700; margin:7mm 0 2.5mm; break-after:avoid; text-align:left; }
-h3::before { content:"■ "; color:var(--accent); font-size:8pt; vertical-align:2px; }
-h4 { font-size:10.5pt; margin:5mm 0 1.5mm; break-after:avoid; }
-p { margin:1.8mm 0; }
-ul, ol { margin:1.2mm 0 2.5mm; padding-left:6mm; }
-li { margin:.8mm 0; }
-li::marker { color:var(--accent); }
-li > ul, li > ol { margin:.6mm 0; }
+/* 본문: 장 → 절 → 소제목 → 문단 순으로 간격이 줄어들게 */
+h2 { font-size:13pt; font-weight:700; color:var(--accent); margin:9mm 0 4mm; padding-bottom:2mm;
+     border-bottom:1.2px solid var(--accent); break-after:avoid; text-align:left; line-height:1.4; }
+h2:first-child { margin-top:0; }
+h2 .no { display:inline-block; min-width:7mm; font-family:'Noto Serif KR',serif; }
+h3 { font-size:10.4pt; font-weight:700; margin:6.5mm 0 2.2mm; break-after:avoid; text-align:left; line-height:1.5; }
+h3::before { content:"■"; color:var(--accent); font-size:6.5pt; vertical-align:1.5px; margin-right:1.6mm; }
+h4 { font-size:9.6pt; margin:4mm 0 1.5mm; break-after:avoid; }
+p { margin:1.6mm 0; }
+/* 굵은 글씨만 있는 짧은 문단(“읽을 때 볼 점”, “내증 …”)은 작은 소제목으로 */
+p.lead { font-size:8.4pt; font-weight:700; color:var(--accent); letter-spacing:.03em; margin:4.2mm 0 1.2mm;
+         break-after:avoid; text-align:left; }
+ul, ol { margin:1mm 0 2.4mm; padding-left:4.6mm; }
+li { margin:.9mm 0; padding-left:.4mm; text-align:left; }  /* 목록은 왼쪽 정렬: 짧은 줄이 벌어지지 않게 */
+li::marker { color:var(--accent); font-size:.85em; }
+li > ul, li > ol { margin:.6mm 0 .8mm; padding-left:4.2mm; }
+li li { font-size:.97em; }
 strong { font-weight:700; }
 hr { display:none; }
-blockquote { margin:3mm 8mm; padding:0; border:none; text-align:center; color:var(--accent); }
-code { font-family:'Noto Sans KR',monospace; font-size:8.5pt; color:var(--muted); }
+blockquote { margin:3mm 6mm; padding:0; border:none; text-align:center; color:var(--accent); }
+code { font-family:'Noto Sans KR',monospace; font-size:7.6pt; color:var(--muted); }
 
-/* 표: 위아래 선만 */
-table { width:100%; border-collapse:collapse; margin:3mm 0 4mm; font-size:9.2pt; line-height:1.6; text-align:left;
-        border-top:1.5px solid var(--ink); border-bottom:1.5px solid var(--ink); }
-th { font-weight:700; font-size:8.8pt; border-bottom:1px solid var(--ink); padding:1.6mm 2mm; vertical-align:bottom; }
-td { border-bottom:.5px solid var(--rule); padding:1.6mm 2mm; vertical-align:top; }
+/* 표: 위아래 선만, 본문보다 한 단계 작게 */
+table { width:100%; border-collapse:collapse; margin:2.6mm 0 3.6mm; font-size:8.1pt; line-height:1.6; text-align:left;
+        border-top:1.2px solid var(--ink); border-bottom:1.2px solid var(--ink);
+        word-break:keep-all; }  /* 표 칸에서는 낱말을 쪼개지 않음 */
+th { font-weight:700; font-size:7.8pt; border-bottom:.8px solid var(--ink); padding:1.3mm 1.6mm; vertical-align:bottom; }
+td { border-bottom:.4px solid var(--rule); padding:1.3mm 1.6mm; vertical-align:top; }
+td:first-child { white-space:normal; min-width:14mm; }
 tr:last-child td { border-bottom:none; }
 tr { break-inside:avoid; }
 thead { display:table-header-group; }
 
-/* 꼬리표: 작은 글씨, 색만 */
-.mk { font-size:7.6pt; white-space:nowrap; }
+/* 꼬리표: 작은 색 글씨 */
+.mk { font-size:6.8pt; white-space:nowrap; letter-spacing:-.01em; }
 .mk::before { content:"〔"; } .mk::after { content:"〕"; }
 .m-ed { color:var(--ed); } .m-gen { color:var(--gen); } .m-blank { color:var(--blank); } .m-wait { color:var(--wait); }
 .m-other { color:var(--muted); }
+.ref { white-space:nowrap; }
 """
 
 
@@ -125,8 +135,8 @@ def source_names(md_text):
 
 def strip_sources(md_text):
     names = source_names(md_text)
-    # ‘출처’ 절 통째로 (다음 ## 또는 끝까지)
-    md_text = re.sub(r"\n## \d+\. 출처\n.*?(?=\n## |\Z)", "\n", md_text, flags=re.S)
+    # ‘출처’·‘교정 기록’ 절 통째로 (다음 ## 또는 끝까지)
+    md_text = re.sub(r"\n## \d+\. (?:출처|교정 기록|확인 대기)[^\n]*\n.*?(?=\n## |\Z)", "\n", md_text, flags=re.S)
     # 항목 앞 이름표: “- [룻]·[삼]: …”
     md_text = re.sub(rf"(^\s*[-*]\s+|^\s*\d+\.\s+)(?:{TAG}[·, ]*)+:\s*", r"\1", md_text, flags=re.M)
     # 주어로 쓰인 태그: “[아]는”
@@ -164,7 +174,10 @@ def decorate(html_text):
             cls = next((c for k, c in MARKER_CLASSES if label.startswith(k)), "m-other")
             return f'<span class="mk {cls}">{label}</span>'
 
-        out.append(MARK_RE.sub(mark, piece))
+        piece = MARK_RE.sub(mark, piece)
+        # 장절 표기(1:19–21, 4:17–22, 3:14b–15)는 줄 끝에서 끊지 않는다
+        piece = REF_RE.sub(lambda m: f'<span class="ref">{m.group(0)}</span>', piece)
+        out.append(piece)
     return "".join(out)
 
 
@@ -206,6 +219,7 @@ def build_html(md_text, section, font_dir, toc_pages=None):
     body = md.render(bold_fix(body_md))
     body = drop_source_columns(body)
     body = decorate(body)
+    body = re.sub(r"<p>(<strong>[^<]{1,40}</strong>)</p>", r'<p class="lead">\1</p>', body)
     body = re.sub(r"<h2>(\d+)\.\s*", r'<h2><span class="no">\1</span>', body)
     heads = [re.sub(r"<[^>]+>", " ", h).split(None, 1) for h in re.findall(r"<h2>(.*?)</h2>", body, re.S)]
     toc_rows = []
@@ -235,8 +249,8 @@ def to_pdf(browser, html_doc, path, footer):
     page.goto("file://" + os.path.abspath(tmp))
     page.evaluate("document.fonts.ready")
     page.wait_for_timeout(500)
-    opts = dict(path=path, format="A4", print_background=True,
-                margin={"top": "24mm", "bottom": "24mm", "left": "22mm", "right": "22mm"})
+    opts = dict(path=path, format="A5", print_background=True,
+                margin={"top": "17mm", "bottom": "19mm", "left": "16mm", "right": "16mm"})
     if footer:
         opts.update(display_header_footer=True, header_template="<span></span>", footer_template=footer)
     page.pdf(**opts)
@@ -256,7 +270,7 @@ def main():
 
     from playwright.sync_api import sync_playwright
 
-    footer = ('<div style="width:100%;text-align:center;font-size:8pt;color:#77736a;'
+    footer = ('<div style="width:100%;text-align:center;font-size:7pt;color:#77736a;'
               'font-family:\'DejaVu Serif\',serif;">— <span class="pageNumber"></span> —</div>')
     base = os.path.splitext(a.pdf)[0]
     with sync_playwright() as p:
