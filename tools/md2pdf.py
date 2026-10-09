@@ -69,6 +69,7 @@ h2 { font-size:13pt; font-weight:700; color:var(--accent); margin:9mm 0 4mm; pad
      border-bottom:1.2px solid var(--accent); break-after:avoid; text-align:left; line-height:1.4; }
 h2:first-child { margin-top:0; }
 h2 .no { display:inline-block; min-width:7mm; font-family:'Noto Serif KR',serif; }
+h2 .no.lec { min-width:0; margin-right:3mm; }
 h3 { font-size:10.4pt; font-weight:700; margin:6.5mm 0 2.2mm; break-after:avoid; text-align:left; line-height:1.5; }
 h3::before { content:"■"; color:var(--accent); font-size:6.5pt; vertical-align:1.5px; margin-right:1.6mm; }
 h4 { font-size:9.6pt; margin:4mm 0 1.5mm; break-after:avoid; }
@@ -304,7 +305,7 @@ def render_inline(md, s):
     return md.renderInline(bold_fix(s))
 
 
-def build_html(md_text, section, font_dir, toc_pages=None, size="A4"):
+def build_html(md_text, section, font_dir, toc_pages=None, size="A4", series="성경 학습 가이드"):
     title, en, motto, intro, body_md = prepare(md_text)
     md = MarkdownIt("commonmark", {"html": True}).enable("table")
     body = md.render(bold_fix(body_md))
@@ -317,16 +318,18 @@ def build_html(md_text, section, font_dir, toc_pages=None, size="A4"):
     body = decorate(body)
     body = re.sub(r"<p>(<strong>[^<]{1,40}</strong>)</p>", r'<p class="lead">\1</p>', body)
     body = re.sub(r"<h2>(\d+)\.\s*", r'<h2><span class="no">\1</span>', body)
+    body = re.sub(r"<h2>(\d+강)\s+", r'<h2><span class="no lec">\1</span>', body)
     heads = [re.sub(r"<span class=\"mk[^>]*>.*?</span>|<[^>]+>", " ", h).split(None, 1) for h in re.findall(r"<h2>(.*?)</h2>", body, re.S)]
     toc_rows = []
     for i, (no, name) in enumerate(heads):
         name = re.sub(r"\s+", " ", name).strip()
         pg = toc_pages[i] if toc_pages and i < len(toc_pages) else ""
-        toc_rows.append(f'<div class="row"><span>{html.escape(no)}. {html.escape(name)}</span>'
+        label_txt = f"{no}. {name}" if no.isdigit() else f"{no} {name}"
+        toc_rows.append(f'<div class="row"><span>{html.escape(label_txt)}</span>'
                         f'<span class="dots"></span><span>{pg}</span></div>')
     cover = (
         '<section class="cover">'
-        f'<div class="series">성경 학습 가이드 · {html.escape(section)}</div>'
+        f'<div class="series">{html.escape(series)} · {html.escape(section)}</div>'
         '<div class="orn"></div>'
         f"<h1>{html.escape(title)}</h1>"
         + (f'<div class="en{" ko" if re.search("[가-힣]", en) else ""}">{html.escape(en)}</div>' if en else "")
@@ -363,6 +366,7 @@ def main():
     ap.add_argument("--section", default="구약")
     ap.add_argument("--chrome", default=None)
     ap.add_argument("--size", choices=sorted(PRESETS), default="A4")
+    ap.add_argument("--series", default="성경 학습 가이드")
     a = ap.parse_args()
     src = open(a.md, encoding="utf-8").read()
 
@@ -373,7 +377,7 @@ def main():
     base = os.path.splitext(a.pdf)[0]
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=a.chrome) if a.chrome else p.chromium.launch()
-        cover_html, body_html, title, heads = build_html(src, a.section, a.fonts, size=a.size)
+        cover_html, body_html, title, heads = build_html(src, a.section, a.fonts, size=a.size, series=a.series)
         to_pdf(browser, body_html, base + ".body.pdf", footer, a.size)
         # 차례의 쪽 번호: 본문 PDF에서 각 절 제목이 처음 나오는 쪽
         body = pymupdf.open(base + ".body.pdf")
@@ -381,7 +385,7 @@ def main():
         for name in heads:
             key = re.sub(r"\s+", " ", name).strip()[:12]
             pages.append(next((i + 1 for i, pg in enumerate(body) if pg.search_for(key)), ""))
-        cover_html, _, _, _ = build_html(src, a.section, a.fonts, pages, a.size)
+        cover_html, _, _, _ = build_html(src, a.section, a.fonts, pages, a.size, a.series)
         to_pdf(browser, cover_html, base + ".cover.pdf", None, a.size)
         browser.close()
     out = pymupdf.open(base + ".cover.pdf")
