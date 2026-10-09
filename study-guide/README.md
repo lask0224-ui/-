@@ -48,6 +48,7 @@
 | 구약 역사서 (`구약/2_역사서/` 개관 + 12권) | ✅ 완료 |
 | 구약 시가서 (`구약/3_시가서/` 개관 + 5권) | ✅ 완료 — 개관(2026-10-08)·욥기·시편·잠언·전도서·아가 |
 | PDF (`pdf/구약/…`) | ✅ 2026-10-08 — 구약 21권(개관 3 + 18권), 340쪽. A4 책 모양(표지·차례) |
+| PDF 합본 (`pdf/구약/N_분류_합본.pdf`) | ✅ 2026-10-09 — 모세오경 114쪽 · 역사서 140쪽 · 시가서 92쪽. 묶음 표지·전체 차례, 이어지는 쪽 번호, 책갈피(책 → 장) |
 
 ## PDF 만들기
 
@@ -66,6 +67,7 @@
 pip install markdown-it-py playwright pymupdf
 npm pack @fontsource/noto-serif-kr @fontsource/noto-sans-kr   # 글꼴 (각 tgz를 같은 폴더에 풀기)
 tools/build_pdfs.sh <글꼴 폴더>        # 모든 책 → study-guide/pdf/구약/… (원고와 같은 폴더 구조)
+                                      # 그리고 분류별 합본 → study-guide/pdf/구약/1_모세오경_합본.pdf 등 (tools/build_volume.py)
 # 한 권만: python3 tools/md2pdf.py study-guide/구약/2_역사서/08_룻기.md study-guide/pdf/구약/2_역사서/08_룻기.pdf \
   --fonts <글꼴 폴더> --section "구약 · 역사서"
 ```
