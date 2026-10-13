@@ -264,8 +264,32 @@ def bold_fix(md_text):
     return "\n".join(bold(l) for l in md_text.split("\n"))
 
 
-MOTTO_LABELS = ("이 책의 표제", "이 책의 두 표제", "두 표제", "표제 구절", "표제")
+MOTTO_LABELS = ("이 책의 질문", "두 책의 표제", "이 책의 표제", "이 책의 두 표제", "두 표제", "표제 구절", "표제")
 INTRO_LABELS = ("히브리 이름", "이름", "네 동사로 읽는 책", "강의의 방식")
+
+
+def head_pages(doc, heads):
+    """각 절 제목이 처음 나오는 쪽(0부터). 본문보다 큰 글씨의 줄에서만, 앞 제목의 쪽부터 찾는다."""
+    from collections import Counter
+    pages = [[ln for b in pg.get_text("dict")["blocks"] for ln in b.get("lines", [])] for pg in doc]
+    sizes = Counter(round(x["size"], 1) for lns in pages for ln in lns for x in ln["spans"])
+    limit = sizes.most_common(1)[0][0] * 1.3 if sizes else 0
+    big = []
+    for lns in pages:
+        lines = []
+        for ln in lns:
+            if True:
+                sp = [x for x in ln["spans"] if x["size"] >= limit]
+                if sp:
+                    lines.append("".join(x["text"] for x in sp))
+        big.append(re.sub(r"\s+", "", " ".join(lines)))
+    out, start = [], 0
+    for name in heads:
+        key = re.sub(r"\s+", "", name)[:10]
+        hit = next((i for i in range(start, len(big)) if key in big[i]), start)
+        out.append(hit)
+        start = hit
+    return out
 
 
 def prepare(md_text):
@@ -382,10 +406,7 @@ def main():
         to_pdf(browser, body_html, base + ".body.pdf", footer, a.size)
         # 차례의 쪽 번호: 본문 PDF에서 각 절 제목이 처음 나오는 쪽
         body = pymupdf.open(base + ".body.pdf")
-        pages = []
-        for name in heads:
-            key = re.sub(r"\s+", " ", name).strip()[:12]
-            pages.append(next((i + 1 for i, pg in enumerate(body) if pg.search_for(key)), ""))
+        pages = [i + 1 for i in head_pages(body, heads)]
         cover_html, _, _, _ = build_html(src, a.section, a.fonts, pages, a.size, a.series)
         to_pdf(browser, cover_html, base + ".cover.pdf", None, a.size)
         browser.close()

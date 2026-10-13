@@ -83,10 +83,7 @@ def main():
             body_pdf = os.path.join(tmp, f"{i:02d}.body.pdf")
             md2pdf.to_pdf(browser, body_html, body_pdf, None, a.size)
             doc = pymupdf.open(body_pdf)
-            rel = []
-            for name in heads:
-                key = re.sub(r"\s+", " ", name).strip()[:12]
-                rel.append(next((j for j, pg in enumerate(doc) if pg.search_for(key)), 0))
+            rel = md2pdf.head_pages(doc, heads)
             books.append(dict(src=src, title=title, en=en, heads=heads, rel=rel, n=doc.page_count, body=body_pdf))
             doc.close()
         # 2) 쪽 번호 매기기: 묶음 표지(1) + 차례(2) 다음부터
