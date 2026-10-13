@@ -319,7 +319,8 @@ def build_html(md_text, section, font_dir, toc_pages=None, size="A4", series="ì„
     body = re.sub(r"<p>(<strong>[^<]{1,40}</strong>)</p>", r'<p class="lead">\1</p>', body)
     body = re.sub(r"<h2>(\d+)\.\s*", r'<h2><span class="no">\1</span>', body)
     body = re.sub(r"<h2>(\d+ê°•)\s+", r'<h2><span class="no lec">\1</span>', body)
-    heads = [re.sub(r"<span class=\"mk[^>]*>.*?</span>|<[^>]+>", " ", h).split(None, 1) for h in re.findall(r"<h2>(.*?)</h2>", body, re.S)]
+    heads = [re.sub(r"<span class=\"mk[^>]*>.*?</span>|<[^>]+>", " ",
+                   re.sub(r"<span class=\"ref\">(.*?)</span>", r"\1", h)).split(None, 1) for h in re.findall(r"<h2>(.*?)</h2>", body, re.S)]
     toc_rows = []
     for i, (no, name) in enumerate(heads):
         name = re.sub(r"\s+", " ", name).strip()
